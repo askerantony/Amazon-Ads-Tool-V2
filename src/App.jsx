@@ -266,11 +266,67 @@ export default function App() {
           <ValidationCard title="Bulk Operations" info={validation.bulk} tone={validation.warnings.length ? "medium" : "good"}/>
         </div>
         <div className="kpiGrid validationKpis">
-          <Kpi label="Targeting → Bulk Match" value={pct(validation.matchRate)} tone={validation.matchRate >= .9 ? "green" : "red"}/>
-          <Kpi label="Campaigns" value={validation.counts.campaigns}/><Kpi label="Ad Groups" value={validation.counts.adGroups}/>
-          <Kpi label="Positive Targets" value={validation.counts.positiveTargets.toLocaleString()}/><Kpi label="Negatives" value={validation.counts.negatives.toLocaleString()}/>
-          <Kpi label="Embedded Bulk STR Rows" value={validation.bulk.embeddedSearchRows.toLocaleString()}/>
-        </div>
+
+  <Kpi
+    label="Targeting → Bulk Match"
+    value={pct(validation.matchRate)}
+    tone={validation.matchRate >= .9 ? "green" : "red"}
+  />
+
+  <Kpi
+    label="Exact Structure Matches"
+    value={Number(
+      validation.matchQualityCounts?.["Name + Target"] || 0
+    ).toLocaleString()}
+    tone="green"
+  />
+
+  <Kpi
+    label="Fallback Matches"
+    value={Number(
+      validation.matchQualityCounts?.["Name + Target (fallback)"] || 0
+    ).toLocaleString()}
+    tone="orange"
+  />
+
+  <Kpi
+    label="Unmatched Targets"
+    value={Number(
+      validation.matchQualityCounts?.Unmatched || 0
+    ).toLocaleString()}
+    tone={
+      (validation.matchQualityCounts?.Unmatched || 0)
+        ? "orange"
+        : "green"
+    }
+  />
+
+  <Kpi
+    label="Campaigns"
+    value={validation.counts.campaigns}
+  />
+
+  <Kpi
+    label="Ad Groups"
+    value={validation.counts.adGroups}
+  />
+
+  <Kpi
+    label="Positive Targets"
+    value={validation.counts.positiveTargets.toLocaleString()}
+  />
+
+  <Kpi
+    label="Negatives"
+    value={validation.counts.negatives.toLocaleString()}
+  />
+
+  <Kpi
+    label="Embedded Bulk STR Rows"
+    value={validation.bulk.embeddedSearchRows.toLocaleString()}
+  />
+
+</div>
         {validation.warnings.length ? <div className="warningBox"><strong>Proceed with awareness</strong>{validation.warnings.map((w,i)=><div key={i}>• {w}</div>)}</div> : <div className="successBox">✓ No material alignment warnings detected.</div>}
         {validation.missingCampaigns.length > 0 && <div className="panel"><h3>Campaigns present in performance reports but missing from Bulk Sheet</h3><div className="chipList">{validation.missingCampaigns.map(c=><Badge key={c} tone="medium">{c}</Badge>)}</div></div>}
         {error && <div className="errorBox">{error}</div>}
