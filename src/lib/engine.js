@@ -102,9 +102,9 @@ export function buildBulkModel(rows) {
     const id = t.keywordId || t.productTargetId;
     if (id) byEntityId.set(String(id), t);
 
-    const exactKey = key(t.campaignName, t.adGroupName, t.normalizedTarget, t.matchType);
-    if (!byStructure.has(exactKey)) byStructure.set(exactKey, []);
-    byStructure.get(exactKey).push(t);
+    const structureKey = key(t.campaignName, t.adGroupName, t.normalizedTarget, t.matchType);
+    if (!byStructure.has(structureKey)) byStructure.set(structureKey, []);
+    byStructure.get(structureKey).push(t);
 
     const fallbackKey = key(t.campaignName, t.normalizedTarget);
     if (!byFallbackStructure.has(fallbackKey)) byFallbackStructure.set(fallbackKey, []);
@@ -134,43 +134,43 @@ function findBulkTarget(metric, bulk) {
     };
   }
 
-  const exactKey = key(
+  const structureKey = key(
     metric.campaignName,
     metric.adGroupName,
     normalizeTarget(metric.targeting),
     metric.matchType
   );
 
-  const exactMatches = bulk.byStructure.get(exactKey) || [];
-  if (exactMatches.length === 1) {
+  const structureMatches = bulk.byStructure.get(structureKey) || [];
+  if (structureMatches.length === 1) {
     return {
-      target: exactMatches[0],
+      target: structureMatches[0],
       quality: "Name + Target",
     };
   }
 
-  // First fallback: ignore match type, but keep campaign + ad group + target.
-  const adGroupFallback = bulk.targets.filter(t =>
+  // Fallback 1: ignore match type but keep campaign + ad group + target.
+  const adGroupMatches = bulk.targets.filter(t =>
     normalizeText(t.campaignName) === normalizeText(metric.campaignName) &&
     normalizeText(t.adGroupName) === normalizeText(metric.adGroupName) &&
     normalizeTarget(t.targeting) === normalizeTarget(metric.targeting)
   );
 
-  if (adGroupFallback.length === 1) {
+  if (adGroupMatches.length === 1) {
     return {
-      target: adGroupFallback[0],
+      target: adGroupMatches[0],
       quality: "Name + Target (fallback)",
     };
   }
 
-  // Second fallback: campaign + target only. This handles Amazon rows where
-  // the ad-group metadata is unavailable or represented differently.
+  // Fallback 2: campaign + target only. This handles Amazon rows where
+  // ad-group metadata is missing or represented differently.
   const fallbackKey = key(metric.campaignName, normalizeTarget(metric.targeting));
-  const campaignFallback = bulk.byFallbackStructure.get(fallbackKey) || [];
+  const campaignMatches = bulk.byFallbackStructure?.get(fallbackKey) || [];
 
-  if (campaignFallback.length === 1) {
+  if (campaignMatches.length === 1) {
     return {
-      target: campaignFallback[0],
+      target: campaignMatches[0],
       quality: "Name + Target (fallback)",
     };
   }
