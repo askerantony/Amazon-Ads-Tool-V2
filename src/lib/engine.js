@@ -9,7 +9,12 @@ function rowValue(row, names) {
   const entries = Object.entries(row || {});
   for (const name of names) {
     const found = entries.find(([k]) => normalizeText(k) === normalizeText(name));
-    if (found) return found[1];
+    if (found) {
+      const value = found[1];
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        return value;
+      }
+    }
   }
   return "";
 }
@@ -91,33 +96,89 @@ export function buildBulkModel(rows) {
 
   const byEntityId = new Map();
   const byStructure = new Map();
+  const byFallbackStructure = new Map();
+
   for (const t of targets) {
     const id = t.keywordId || t.productTargetId;
     if (id) byEntityId.set(String(id), t);
-    const k = key(t.campaignName, t.adGroupName, t.normalizedTarget, t.matchType);
-    if (!byStructure.has(k)) byStructure.set(k, []);
-    byStructure.get(k).push(t);
+
+    const exactKey = key(t.campaignName, t.adGroupName, t.normalizedTarget, t.matchType);
+    if (!byStructure.has(exactKey)) byStructure.set(exactKey, []);
+    byStructure.get(exactKey).push(t);
+
+    const fallbackKey = key(t.campaignName, t.normalizedTarget);
+    if (!byFallbackStructure.has(fallbackKey)) byFallbackStructure.set(fallbackKey, []);
+    byFallbackStructure.get(fallbackKey).push(t);
   }
-  return { campaigns, adGroups, targets, negatives, placements, productAds, byEntityId, byStructure };
+
+  return {
+    campaigns,
+    adGroups,
+    targets,
+    negatives,
+    placements,
+    productAds,
+    byEntityId,
+    byStructure,
+    byFallbackStructure,
+  };
 }
 
 function findBulkTarget(metric, bulk) {
   const entityId = metric.keywordId || metric.productTargetId;
-  if (entityId && bulk.byEntityId.has(String(entityId))) {
-    return { target: bulk.byEntityId.get(String(entityId)), quality: "Exact ID" };
-  }
-  const k = key(metric.campaignName, metric.adGroupName, normalizeTarget(metric.targeting), metric.matchType);
-  const matches = bulk.byStructure.get(k) || [];
-  if (matches.length === 1) return { target: matches[0], quality: "Name + Target" };
 
-  // Auto reports can have match type '-' while bulk stores the four auto expressions as product targets.
-  const softer = bulk.targets.filter(t =>
+  if (entityId && bulk.byEntityId.has(String(entityId))) {
+    return {
+      target: bulk.byEntityId.get(String(entityId)),
+      quality: "Exact ID",
+    };
+  }
+
+  const exactKey = key(
+    metric.campaignName,
+    metric.adGroupName,
+    normalizeTarget(metric.targeting),
+    metric.matchType
+  );
+
+  const exactMatches = bulk.byStructure.get(exactKey) || [];
+  if (exactMatches.length === 1) {
+    return {
+      target: exactMatches[0],
+      quality: "Name + Target",
+    };
+  }
+
+  // First fallback: ignore match type, but keep campaign + ad group + target.
+  const adGroupFallback = bulk.targets.filter(t =>
     normalizeText(t.campaignName) === normalizeText(metric.campaignName) &&
     normalizeText(t.adGroupName) === normalizeText(metric.adGroupName) &&
     normalizeTarget(t.targeting) === normalizeTarget(metric.targeting)
   );
-  if (softer.length === 1) return { target: softer[0], quality: "Name + Target (fallback)" };
-  return { target: null, quality: "Unmatched" };
+
+  if (adGroupFallback.length === 1) {
+    return {
+      target: adGroupFallback[0],
+      quality: "Name + Target (fallback)",
+    };
+  }
+
+  // Second fallback: campaign + target only. This handles Amazon rows where
+  // the ad-group metadata is unavailable or represented differently.
+  const fallbackKey = key(metric.campaignName, normalizeTarget(metric.targeting));
+  const campaignFallback = bulk.byFallbackStructure.get(fallbackKey) || [];
+
+  if (campaignFallback.length === 1) {
+    return {
+      target: campaignFallback[0],
+      quality: "Name + Target (fallback)",
+    };
+  }
+
+  return {
+    target: null,
+    quality: "Unmatched",
+  };
 }
 
 function isActive(t) {
@@ -249,6 +310,11 @@ export function validateInputs({ searchWorkbook, targetWorkbook, bulkWorkbook, s
   const targetAgg = aggregateTargets(targetSheet.rows, tgCols, bulk);
   const matched = targetAgg.filter(x => x.matchQuality !== "Unmatched").length;
   const matchRate = targetAgg.length ? matched / targetAgg.length : 0;
+
+  const matchQualityCounts = targetAgg.reduce((acc, x) => {
+    acc[x.matchQuality] = (acc[x.matchQuality] || 0) + 1;
+    return acc;
+  }, {});
   const reportCampaigns = new Set(targetAgg.map(x => normalizeText(x.campaignName)).filter(Boolean));
   const bulkCampaignsByName = new Set([...bulk.campaigns.values()].map(x => normalizeText(x.campaignName)).filter(Boolean));
   const missingCampaigns = [...reportCampaigns].filter(x => !bulkCampaignsByName.has(x));
@@ -274,6 +340,7 @@ export function validateInputs({ searchWorkbook, targetWorkbook, bulkWorkbook, s
     counts: { campaigns: bulk.campaigns.size, adGroups: bulk.adGroups.size, positiveTargets: bulk.targets.length, negatives: bulk.negatives.length, placements: bulk.placements.length, productAds: bulk.productAds.length },
     entityCounts,
     matchRate,
+    matchQualityCounts,
     matchedTargets: matched,
     totalTargetRows: targetAgg.length,
     missingCampaigns,
